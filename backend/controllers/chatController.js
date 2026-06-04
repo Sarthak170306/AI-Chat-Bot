@@ -12,7 +12,7 @@ exports.createNewSession = async (req, res) => {
     if (!userId) {
       return res.status(401).json({ success: false, error: 'Unauthenticated' });
     }
-    const session = await ChatSession.create({ userId });
+    const session = await ChatSession.create({ userId: String(userId) });
     return res.status(201).json({ success: true, sessionId: session._id, title: session.title });
   } catch (error) {
     console.error('Error creating chat session:', error);

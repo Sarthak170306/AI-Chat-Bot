@@ -12,9 +12,13 @@ const Message = require('../models/Message');
  * @access  Private (Clerk Authenticated)
  */
 router.post('/', authMiddleware, async (req, res) => {
+  console.log("Incoming Request Auth State:", req.auth);
+  if (!req.auth || !req.auth.userId) {
+    return res.status(401).json({ success: false, error: "Clerk verification failed on Backend. userId is missing." });
+  }
   try {
     const { message, sessionId } = req.body;
-    const userId = req.auth?.userId;
+    const userId = String(req.auth.userId);
 
     // Validate message
     if (!message || typeof message !== 'string') {
@@ -33,7 +37,7 @@ router.post('/', authMiddleware, async (req, res) => {
 
     // If no sessionId supplied, create a new session for this user
     if (!currentSessionId) {
-      const newSession = await ChatSession.create({ userId });
+      const newSession = await ChatSession.create({ userId: String(userId) });
       currentSessionId = newSession._id;
     } else {
       // Verify that the session belongs to the user
@@ -72,7 +76,13 @@ router.post('/', authMiddleware, async (req, res) => {
 router.post('/session', authMiddleware, chatController.createNewSession);
 
 // Retrieve all sessions for the authenticated user
-router.get('/sessions', authMiddleware, chatController.getUserSessions);
+router.get('/sessions', authMiddleware, (req, res) => {
+  console.log("Incoming Request Auth State:", req.auth);
+  if (!req.auth || !req.auth.userId) {
+    return res.status(401).json({ success: false, error: "Clerk verification failed on Backend. userId is missing." });
+  }
+  return chatController.getUserSessions(req, res);
+});
 
 // Retrieve message history for a specific session
 router.get('/history/:sessionId', authMiddleware, chatController.getSessionMessages);

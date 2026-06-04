@@ -13,7 +13,7 @@ const { Clerk } = require('@clerk/clerk-sdk-node');
  * Protect backend routes by verifying Clerk bearer tokens.
  * The frontend should send `Authorization: Bearer <token>`.
  */
-const clerk = Clerk({ apiKey: process.env.CLERK_SECRET_KEY });
+const clerk = Clerk({ secretKey: process.env.CLERK_SECRET_KEY });
 
 module.exports = async (req, res, next) => {
   try {
@@ -32,6 +32,7 @@ module.exports = async (req, res, next) => {
 
     req.clerkUserId = clerkUserId;
     req.clerkUser = verified;
+    req.auth = { userId: clerkUserId };
     return next();
   } catch (err) {
     console.error('Clerk auth error:', err);

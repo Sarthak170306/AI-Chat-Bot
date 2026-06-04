@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useAuth, useUser, UserButton } from '@clerk/nextjs';
+import { useAuth, useUser, UserButton, SignOutButton } from '@clerk/nextjs';
 import { Plus, MessageSquare, SendHorizontal, Menu, X, Image, Mic, HelpCircle, Settings } from 'lucide-react';
 
 export default function ChatInterface() {
-  const { getToken } = useAuth();
+  const { getToken, isLoaded, userId } = useAuth();
   const { user } = useUser();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -11,6 +11,9 @@ export default function ChatInterface() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [sessions, setSessions] = useState([]);
   const [activeSessionId, setActiveSessionId] = useState(null);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [isListening, setIsListening] = useState(false);
+  const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
 
   // Auto-scroll to the bottom of messages
@@ -48,104 +51,157 @@ export default function ChatInterface() {
 
   // Fetch recent chat sessions for the logged-in user
   const fetchUserSessions = async () => {
+    if (!isLoaded || !userId) {
+      console.log("Clerk is loading or user is not logged in yet. Aborting session fetch.");
+      return;
+    }
     try {
       const token = await getToken();
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000';
-      const res = await fetch(`${backendUrl}/api/chat/sessions`, {
-        method: 'GET',
+      if (!token) {
+        console.error("Failed to retrieve a valid Clerk token.");
+        return;
+      }
+      
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/chat/sessions`, {
+        method: "GET",
         headers: {
-          Authorization: `Bearer ${token}`
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
         }
       });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setSessions(data.sessions);
-      } else {
-        console.error('Failed to fetch sessions', data.error);
+      
+      if (res.status === 401) {
+        console.error("Backend returned 401 Unauthorized. Check backend Clerk config/Secret Key.");
+        return;
       }
+      
+      const data = await res.json();
+      if (data.success) setSessions(data.sessions || []);
     } catch (err) {
-      console.error('Error fetching sessions', err);
+      console.error("Failed to fetch sessions:", err);
     }
   };
 
   // Fetch all messages for a given session
   const fetchSessionMessages = async (sessionId) => {
+    if (!isLoaded || !userId) {
+      console.log("Clerk is loading or user is not logged in yet. Aborting session messages fetch.");
+      return;
+    }
     try {
       const token = await getToken();
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000';
-      const res = await fetch(`${backendUrl}/api/chat/history/${sessionId}`, {
-        method: 'GET',
+      if (!token) {
+        console.error("Failed to retrieve a valid Clerk token for session messages.");
+        return;
+      }
+      
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/chat/history/${sessionId}`, {
+        method: "GET",
         headers: {
-          Authorization: `Bearer ${token}`
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
         }
       });
+      
+      if (res.status === 401) {
+        console.error("Backend returned 401 Unauthorized for history. Check backend Clerk config/Secret Key.");
+        return;
+      }
+      
       const data = await res.json();
-      if (res.ok && data.success) {
-        setMessages(data.messages);
+      if (data.success) {
+        setMessages(data.messages || []);
         setActiveSessionId(sessionId);
-      } else {
-        console.error('Failed to fetch session messages', data.error);
       }
     } catch (err) {
-      console.error('Error fetching session messages', err);
+      console.error("Failed to fetch session messages:", err);
     }
   };
 
-  // Load sessions on component mount
+  // Load sessions on component mount and when authentication details load
   useEffect(() => {
-    fetchUserSessions();
-  }, []);
+    if (isLoaded && userId) {
+      fetchUserSessions();
+    }
+  }, [isLoaded, userId]);
 
   // Pre-configured suggestions for the welcome screen state
 
-  // Sessions will be fetched from backend and stored in `sessions` state.
+  // Voice input simulation handler
+  const handleVoiceClick = () => {
+    if (!isListening) {
+      setIsListening(true);
+      setTimeout(() => {
+        setIsListening(false);
+        setInput("Simulated voice input message.");
+      }, 3000);
+    } else {
+      setIsListening(false);
+    }
+  };
 
   const handleSend = async (e) => {
     if (e) e.preventDefault();
     if (!input.trim() || isLoading) return;
 
+    if (!isLoaded || !userId) {
+      console.log("Clerk is loading or user is not logged in yet. Aborting handleSend.");
+      return;
+    }
+
+    const token = await getToken();
+    if (!token) {
+      console.error("Failed to retrieve a valid Clerk token for sending message.");
+      return;
+    }
+
     const userMessage = input.trim();
     setInput('');
+    setSelectedFile(null);
     
     // 1. Append user message to state
     setMessages((prev) => [...prev, { role: 'user', content: userMessage }]);
     setIsLoading(true);
 
     try {
-      // 2. Fetch clerk session token
-      const token = await getToken();
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ message: userMessage, sessionId: activeSessionId })
+      });
 
-      // 3. Post to backend chat endpoint
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000';
-        const response = await fetch(`${backendUrl}/api/chat`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({ message: userMessage, sessionId: activeSessionId })
-        });
+      if (res.status === 401) {
+        console.error("Backend returned 401 Unauthorized for message sending. Check backend Clerk config/Secret Key.");
+        setMessages((prev) => [
+          ...prev,
+          { role: 'assistant', content: 'Unauthorized: Access denied. Please check your authentication.' }
+        ]);
+        return;
+      }
 
-      const data = await response.json();
+      const data = await res.json();
 
-        if (response.ok && data.success) {
-          // 4. Append assistant response
-          setMessages((prev) => [...prev, { role: 'assistant', content: data.response }]);
-          // If backend created a new session, update state and refresh sessions list
-          if (data.sessionId) {
-            setActiveSessionId(data.sessionId);
-            fetchUserSessions();
-          }
-        } else {
-          throw new Error(data.error || 'Failed to get a response from the server.');
+      if (res.ok && data.success) {
+        // 4. Append assistant response
+        setMessages((prev) => [...prev, { role: 'assistant', content: data.response }]);
+        // If backend created a new session, update state and refresh sessions list
+        if (data.sessionId) {
+          setActiveSessionId(data.sessionId);
+          fetchUserSessions();
         }
+      } else {
+        throw new Error(data.error || 'Failed to get a response from the server.');
+      }
     } catch (error) {
       console.error('Chat error:', error);
       setMessages((prev) => [
         ...prev, 
         { 
           role: 'assistant', 
-          content: `Error: ${error.message || 'Unable to connect to the backend server. Make sure it is running on port 5000.'}` 
+          content: `Error: ${error.message || 'Unable to connect to the backend server. Make sure it is running.'}` 
         }
       ]);
     } finally {
@@ -232,24 +288,31 @@ export default function ChatInterface() {
         </div>
 
         {/* User Account / Clerk block at the bottom */}
-        <div className="p-4 border-t border-zinc-900 bg-[#111217] space-y-4">
-          <div className="flex flex-col space-y-1">
-            <button className="flex items-center space-x-3 w-full px-3 py-2 rounded-full text-left text-[13px] text-slate-400 hover:bg-[#1a1b23] hover:text-slate-200 transition">
-              <HelpCircle className="w-4 h-4 text-slate-500" />
-              <span className="font-medium">Help</span>
-            </button>
-            <button className="flex items-center space-x-3 w-full px-3 py-2 rounded-full text-left text-[13px] text-slate-400 hover:bg-[#1a1b23] hover:text-slate-200 transition">
-              <Settings className="w-4 h-4 text-slate-500" />
-              <span className="font-medium">Settings</span>
-            </button>
-          </div>
-          <div className="flex items-center space-x-3 px-3 py-2 rounded-xl bg-[#1a1b23]/40 border border-zinc-800/30">
-            <UserButton afterSignOutUrl="/" />
-            <div className="flex flex-col text-left">
-              <span className="text-xs font-semibold text-white truncate max-w-[120px]">{user?.firstName || 'User Profile'}</span>
-              <span className="text-[10px] text-slate-500 font-light">Secure Session</span>
+        <div className="mt-auto p-4 border-t border-slate-800/60 bg-[#15171e]/50 backdrop-blur-md rounded-xl mx-2 my-2 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            {/* Active Clerk Profile Avatar Button */}
+            <UserButton 
+              afterSignOutUrl="/sign-in"
+              appearance={{
+                elements: {
+                  avatarBox: "h-9 w-9 border border-teal-500/30 rounded-full hover:scale-105 transition-all duration-200"
+                }
+              }}
+            />
+            <div className="flex flex-col">
+              <span className="text-sm font-medium text-slate-200">Account</span>
+              <span className="text-xs text-teal-400 font-medium">NexAI Session</span>
             </div>
           </div>
+          
+          {/* Explicit Dedicated Logout Button Action */}
+          <SignOutButton signOutCallback={() => window.location.href = '/sign-in'}>
+            <button className="p-2 hover:bg-red-500/10 text-slate-400 hover:text-red-400 rounded-lg transition-all duration-200 group" title="Logout Account">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" />
+              </svg>
+            </button>
+          </SignOutButton>
         </div>
       </aside>
 
@@ -380,23 +443,60 @@ export default function ChatInterface() {
         {/* Bottom Input Area with transparent gradient overlay */}
         <footer className="bg-gradient-to-t from-[#0b0c10] via-[#0b0c10]/95 to-transparent pt-6 pb-6 px-4 z-20">
           <form onSubmit={handleSend} className="max-w-3xl mx-auto">
+            {/* Hidden File Input */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/*,application/pdf"
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files && e.target.files[0]) {
+                  setSelectedFile(e.target.files[0]);
+                }
+              }}
+            />
+
+            {/* Premium File Chip Preview */}
+            {selectedFile && (
+              <div className="flex items-center space-x-2 bg-[#1a1b23] border border-zinc-800 rounded-lg px-3 py-1.5 mb-3 w-fit text-xs text-slate-200 shadow-md">
+                <span className="truncate max-w-[200px] font-medium">{selectedFile.name}</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedFile(null)}
+                  className="text-slate-500 hover:text-slate-200 transition"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
             <div className="relative rounded-3xl bg-[#111217] pl-6 pr-3 py-3 border border-zinc-805/30 focus-within:border-teal-500/40 focus-within:ring-1 focus-within:ring-teal-500/10 transition-all duration-200 shadow-2xl flex items-center justify-between space-x-3">
               <input
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Ask NexAI..."
+                placeholder={isListening ? "Listening... Speak now." : "Ask NexAI..."}
                 className="bg-transparent border-none text-white outline-none flex-1 text-[16px] placeholder-slate-500 py-1"
                 disabled={isLoading}
               />
               
               <div className="flex items-center space-x-2">
-                {/* Aesthetic NexAI Actions */}
-                <button type="button" className="p-2 rounded-full text-slate-500 hover:text-slate-300 transition duration-150">
+                {/* File Attachment Button */}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-2 rounded-full text-slate-500 hover:text-slate-300 transition duration-150"
+                >
                   <Image className="w-5 h-5" />
                 </button>
-                <button type="button" className="p-2 rounded-full text-slate-500 hover:text-slate-300 transition duration-150">
+
+                {/* Microphone / Voice Simulation Button */}
+                <button
+                  type="button"
+                  onClick={handleVoiceClick}
+                  className={`p-2 rounded-full transition duration-150 ${isListening ? 'animate-pulse text-teal-400' : 'text-slate-500 hover:text-slate-300'}`}
+                >
                   <Mic className="w-5 h-5" />
                 </button>
                 
