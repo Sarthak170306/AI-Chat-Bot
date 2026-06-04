@@ -17,7 +17,7 @@ router.post('/', authMiddleware, async (req, res) => {
     return res.status(401).json({ success: false, error: "Clerk verification failed on Backend. userId is missing." });
   }
   try {
-    const { message, sessionId } = req.body;
+    const { message, sessionId, image } = req.body;
     const userId = String(req.auth.userId);
 
     // Validate message
@@ -29,8 +29,8 @@ router.post('/', authMiddleware, async (req, res) => {
     }
 
     // Helper to persist a message
-    const saveMessage = async (sid, role, content) => {
-      await Message.create({ sessionId: sid, role, content });
+    const saveMessage = async (sid, role, content, img = null) => {
+      await Message.create({ sessionId: sid, role, content, image: img });
     };
 
     let currentSessionId = sessionId;
@@ -51,10 +51,10 @@ router.post('/', authMiddleware, async (req, res) => {
     }
 
     // Persist user message
-    await saveMessage(currentSessionId, 'user', message);
+    await saveMessage(currentSessionId, 'user', message, image);
 
     // Generate AI response
-    const aiResponse = await generateAIResponse(message);
+    const aiResponse = await generateAIResponse(message, image);
 
     // Persist assistant response
     await saveMessage(currentSessionId, 'assistant', aiResponse);

@@ -22,13 +22,14 @@ try {
 }
 
 /**
- * Generates an AI text response using the Gemini model.
+ * Generates an AI text response using the Gemini model (multimodal supported).
  * 
  * @param {string} userMessage - The text message prompt from the user.
+ * @param {string} [image] - Optional Base64 data string (e.g. data:image/png;base64,...)
  * @returns {Promise<string>} The generated AI text response.
  * @throws {Error} If the API key is missing or the generation fails.
  */
-async function generateAIResponse(userMessage) {
+async function generateAIResponse(userMessage, image) {
   // Enforce API key check at runtime
   const apiKey = process.env.AI_API_KEY;
   if (!apiKey) {
@@ -46,7 +47,21 @@ async function generateAIResponse(userMessage) {
   }
 
   try {
-    const result = await model.generateContent(userMessage);
+    const contentParts = [userMessage];
+    if (image) {
+      // Extract mimeType and base64 data
+      const matches = image.match(/^data:(.+);base64,(.+)$/);
+      if (matches) {
+        contentParts.push({
+          inlineData: {
+            data: matches[2],
+            mimeType: matches[1]
+          }
+        });
+      }
+    }
+
+    const result = await model.generateContent(contentParts);
     const response = await result.response;
     const text = response.text();
     

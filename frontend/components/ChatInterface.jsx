@@ -12,6 +12,7 @@ export default function ChatInterface() {
   const [sessions, setSessions] = useState([]);
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [base64Image, setBase64Image] = useState(null);
   const [isListening, setIsListening] = useState(false);
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -156,11 +157,13 @@ export default function ChatInterface() {
     }
 
     const userMessage = input.trim();
+    const attachedImage = base64Image;
     setInput('');
     setSelectedFile(null);
+    setBase64Image(null);
     
     // 1. Append user message to state
-    setMessages((prev) => [...prev, { role: 'user', content: userMessage }]);
+    setMessages((prev) => [...prev, { role: 'user', content: userMessage, image: attachedImage }]);
     setIsLoading(true);
 
     try {
@@ -170,7 +173,7 @@ export default function ChatInterface() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ message: userMessage, sessionId: activeSessionId })
+        body: JSON.stringify({ message: userMessage, sessionId: activeSessionId, image: attachedImage })
       });
 
       if (res.status === 401) {
@@ -182,9 +185,23 @@ export default function ChatInterface() {
         return;
       }
 
+      if (!res.ok) {
+        if (res.status === 413) {
+          throw new Error('Payload too large: The attached image exceeds the maximum upload size.');
+        }
+        let errorMsg = 'Failed to get a response from the server.';
+        try {
+          const errData = await res.json();
+          errorMsg = errData.error || errorMsg;
+        } catch (_) {
+          errorMsg = `Server error (Status ${res.status}): Please verify the backend logs.`;
+        }
+        throw new Error(errorMsg);
+      }
+
       const data = await res.json();
 
-      if (res.ok && data.success) {
+      if (data.success) {
         // 4. Append assistant response
         setMessages((prev) => [...prev, { role: 'assistant', content: data.response }]);
         // If backend created a new session, update state and refresh sessions list
@@ -306,7 +323,7 @@ export default function ChatInterface() {
           </div>
           
           {/* Explicit Dedicated Logout Button Action */}
-          <SignOutButton signOutCallback={() => window.location.href = '/sign-in'}>
+          <SignOutButton redirectUrl="/sign-in">
             <button className="p-2 hover:bg-red-500/10 text-slate-400 hover:text-red-400 rounded-lg transition-all duration-200 group" title="Logout Account">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" />
@@ -407,6 +424,13 @@ export default function ChatInterface() {
                           : 'text-slate-200'
                         }
                       `}>
+                        {msg.image && (
+                          <img 
+                            src={msg.image} 
+                            alt="Uploaded attachment" 
+                            className="max-w-full max-h-[200px] rounded-lg mb-2 object-cover border border-zinc-800"
+                          />
+                        )}
                         {msg.content}
                       </div>
                     </div>
@@ -451,18 +475,28 @@ export default function ChatInterface() {
               className="hidden"
               onChange={(e) => {
                 if (e.target.files && e.target.files[0]) {
-                  setSelectedFile(e.target.files[0]);
+                  const file = e.target.files[0];
+                  setSelectedFile(file);
+                  
+                  const reader = new FileReader();
+                  reader.onloadend = () => {
+                    setBase64Image(reader.result);
+                  };
+                  reader.readAsDataURL(file);
                 }
               }}
             />
 
             {/* Premium File Chip Preview */}
             {selectedFile && (
-              <div className="flex items-center space-x-2 bg-[#1a1b23] border border-zinc-800 rounded-lg px-3 py-1.5 mb-3 w-fit text-xs text-slate-200 shadow-md">
+              <div className="flex items-center space-x-2 bg-[#1a1b23] border border-zinc-805 rounded-lg px-3 py-1.5 mb-3 w-fit text-xs text-slate-200 shadow-md">
                 <span className="truncate max-w-[200px] font-medium">{selectedFile.name}</span>
                 <button
                   type="button"
-                  onClick={() => setSelectedFile(null)}
+                  onClick={() => {
+                    setSelectedFile(null);
+                    setBase64Image(null);
+                  }}
                   className="text-slate-500 hover:text-slate-200 transition"
                 >
                   <X className="w-3.5 h-3.5" />
