@@ -9,6 +9,8 @@ export default function ChatInterface() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [sessions, setSessions] = useState([]);
+  const [activeSessionId, setActiveSessionId] = useState(null);
   const messagesEndRef = useRef(null);
 
   // Auto-scroll to the bottom of messages
@@ -44,12 +46,59 @@ export default function ChatInterface() {
     },
   ];
 
-  // Pre-configured mock conversation history for recents UI aesthetics
-  const historyItems = [
-    { id: 1, title: 'Day 3: AI Integration' },
-    { id: 2, title: 'React Hooks & State' },
-    { id: 3, title: 'MongoDB Connection Guide' },
-  ];
+  // Fetch recent chat sessions for the logged-in user
+  const fetchUserSessions = async () => {
+    try {
+      const token = await getToken();
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000';
+      const res = await fetch(`${backendUrl}/api/chat/sessions`, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSessions(data.sessions);
+      } else {
+        console.error('Failed to fetch sessions', data.error);
+      }
+    } catch (err) {
+      console.error('Error fetching sessions', err);
+    }
+  };
+
+  // Fetch all messages for a given session
+  const fetchSessionMessages = async (sessionId) => {
+    try {
+      const token = await getToken();
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000';
+      const res = await fetch(`${backendUrl}/api/chat/history/${sessionId}`, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setMessages(data.messages);
+        setActiveSessionId(sessionId);
+      } else {
+        console.error('Failed to fetch session messages', data.error);
+      }
+    } catch (err) {
+      console.error('Error fetching session messages', err);
+    }
+  };
+
+  // Load sessions on component mount
+  useEffect(() => {
+    fetchUserSessions();
+  }, []);
+
+  // Pre-configured suggestions for the welcome screen state
+
+  // Sessions will be fetched from backend and stored in `sessions` state.
 
   const handleSend = async (e) => {
     if (e) e.preventDefault();
@@ -68,23 +117,28 @@ export default function ChatInterface() {
 
       // 3. Post to backend chat endpoint
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000';
-      const response = await fetch(`${backendUrl}/api/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ message: userMessage })
-      });
+        const response = await fetch(`${backendUrl}/api/chat`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ message: userMessage, sessionId: activeSessionId })
+        });
 
       const data = await response.json();
 
-      if (response.ok && data.success) {
-        // 4. Append assistant response
-        setMessages((prev) => [...prev, { role: 'assistant', content: data.response }]);
-      } else {
-        throw new Error(data.error || 'Failed to get a response from the server.');
-      }
+        if (response.ok && data.success) {
+          // 4. Append assistant response
+          setMessages((prev) => [...prev, { role: 'assistant', content: data.response }]);
+          // If backend created a new session, update state and refresh sessions list
+          if (data.sessionId) {
+            setActiveSessionId(data.sessionId);
+            fetchUserSessions();
+          }
+        } else {
+          throw new Error(data.error || 'Failed to get a response from the server.');
+        }
     } catch (error) {
       console.error('Chat error:', error);
       setMessages((prev) => [
@@ -108,6 +162,7 @@ export default function ChatInterface() {
 
   const handleNewChat = () => {
     setMessages([]);
+    setActiveSessionId(null);
     setIsSidebarOpen(false);
   };
 
@@ -164,13 +219,14 @@ export default function ChatInterface() {
         {/* Recents list section */}
         <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1">
           <div className="px-3 mb-3 text-xs font-semibold text-slate-500 tracking-wider">Recent</div>
-          {historyItems.map((item) => (
+          {sessions.map((session) => (
             <button
-              key={item.id}
+              key={session._id}
+              onClick={() => fetchSessionMessages(session._id)}
               className="flex items-center space-x-3 w-full px-3 py-2.5 rounded-full text-left text-[14px] text-slate-400 hover:bg-[#1a1b23] hover:text-slate-200 transition duration-150 group"
             >
               <MessageSquare className="w-4 h-4 shrink-0 text-slate-500 group-hover:text-slate-400" />
-              <span className="truncate flex-1 font-medium">{item.title}</span>
+              <span className="truncate flex-1 font-medium">{session.title || 'Untitled'}</span>
             </button>
           ))}
         </div>
