@@ -17,20 +17,22 @@ router.post('/', authMiddleware, async (req, res) => {
     return res.status(401).json({ success: false, error: "Clerk verification failed on Backend. userId is missing." });
   }
   try {
-    const { message, sessionId, image } = req.body;
+    const { message, sessionId, image, audio } = req.body;
     const userId = String(req.auth.userId);
 
-    // Validate message
-    if (!message || typeof message !== 'string') {
+    // Validate message - can be empty if image or audio is attached
+    if ((!message || typeof message !== 'string') && !image && !audio) {
       return res.status(400).json({
         success: false,
-        error: 'The "message" field is required and must be a string.'
+        error: 'The "message" field is required (or an image/audio attachment must be provided).'
       });
     }
 
+    const promptMessage = message || "";
+
     // Helper to persist a message
-    const saveMessage = async (sid, role, content, img = null) => {
-      await Message.create({ sessionId: sid, role, content, image: img });
+    const saveMessage = async (sid, role, content, img = null, aud = null) => {
+      await Message.create({ sessionId: sid, role, content, image: img, audio: aud });
     };
 
     let currentSessionId = sessionId;
@@ -51,10 +53,10 @@ router.post('/', authMiddleware, async (req, res) => {
     }
 
     // Persist user message
-    await saveMessage(currentSessionId, 'user', message, image);
+    await saveMessage(currentSessionId, 'user', promptMessage, image, audio);
 
     // Generate AI response
-    const aiResponse = await generateAIResponse(message, image);
+    const aiResponse = await generateAIResponse(promptMessage, image, audio);
 
     // Persist assistant response
     await saveMessage(currentSessionId, 'assistant', aiResponse);

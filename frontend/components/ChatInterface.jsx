@@ -13,8 +13,11 @@ export default function ChatInterface() {
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
   const [base64Image, setBase64Image] = useState(null);
+  const [base64Audio, setBase64Audio] = useState(null);
   const [isListening, setIsListening] = useState(false);
   const fileInputRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
   const messagesEndRef = useRef(null);
 
   // Auto-scroll to the bottom of messages
@@ -128,22 +131,49 @@ export default function ChatInterface() {
 
   // Pre-configured suggestions for the welcome screen state
 
-  // Voice input simulation handler
-  const handleVoiceClick = () => {
+  // Real voice audio recording handler using MediaRecorder
+  const handleVoiceClick = async () => {
     if (!isListening) {
-      setIsListening(true);
-      setTimeout(() => {
-        setIsListening(false);
-        setInput("Simulated voice input message.");
-      }, 3000);
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
+        audioChunksRef.current = [];
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data && event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+          }
+        };
+
+        mediaRecorder.onstop = () => {
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            setBase64Audio(reader.result);
+          };
+          reader.readAsDataURL(audioBlob);
+
+          // Stop all stream tracks to release microphone
+          stream.getTracks().forEach((track) => track.stop());
+        };
+
+        mediaRecorder.start();
+        setIsListening(true);
+      } catch (err) {
+        console.error("Failed to access microphone:", err);
+      }
     } else {
-      setIsListening(false);
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+        setIsListening(false);
+      }
     }
   };
 
   const handleSend = async (e) => {
     if (e) e.preventDefault();
-    if (!input.trim() || isLoading) return;
+    if ((!input.trim() && !base64Image && !base64Audio) || isLoading) return;
 
     if (!isLoaded || !userId) {
       console.log("Clerk is loading or user is not logged in yet. Aborting handleSend.");
@@ -158,12 +188,14 @@ export default function ChatInterface() {
 
     const userMessage = input.trim();
     const attachedImage = base64Image;
+    const attachedAudio = base64Audio;
     setInput('');
     setSelectedFile(null);
     setBase64Image(null);
+    setBase64Audio(null);
     
     // 1. Append user message to state
-    setMessages((prev) => [...prev, { role: 'user', content: userMessage, image: attachedImage }]);
+    setMessages((prev) => [...prev, { role: 'user', content: userMessage, image: attachedImage, audio: attachedAudio }]);
     setIsLoading(true);
 
     try {
@@ -173,7 +205,7 @@ export default function ChatInterface() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ message: userMessage, sessionId: activeSessionId, image: attachedImage })
+        body: JSON.stringify({ message: userMessage, sessionId: activeSessionId, image: attachedImage, audio: attachedAudio })
       });
 
       if (res.status === 401) {
@@ -431,6 +463,13 @@ export default function ChatInterface() {
                             className="max-w-full max-h-[200px] rounded-lg mb-2 object-cover border border-zinc-800"
                           />
                         )}
+                        {msg.audio && (
+                          <audio 
+                            src={msg.audio} 
+                            controls 
+                            className="max-w-full rounded-lg mb-2 border border-zinc-850/50 outline-none"
+                          />
+                        )}
                         {msg.content}
                       </div>
                     </div>
@@ -504,13 +543,28 @@ export default function ChatInterface() {
               </div>
             )}
 
+            {/* Premium Audio Chip Preview */}
+            {base64Audio && (
+              <div className="flex items-center space-x-2 bg-[#1a1b23] border border-zinc-805 rounded-lg px-3 py-1.5 mb-3 w-fit text-xs text-slate-200 shadow-md">
+                <span className="font-medium">🎤 Audio Note</span>
+                <audio src={base64Audio} controls className="h-6 w-36 outline-none" />
+                <button
+                  type="button"
+                  onClick={() => setBase64Audio(null)}
+                  className="text-slate-500 hover:text-slate-200 transition"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
             <div className="relative rounded-3xl bg-[#111217] pl-6 pr-3 py-3 border border-zinc-805/30 focus-within:border-teal-500/40 focus-within:ring-1 focus-within:ring-teal-500/10 transition-all duration-200 shadow-2xl flex items-center justify-between space-x-3">
               <input
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={isListening ? "Listening... Speak now." : "Ask NexAI..."}
+                placeholder={isListening ? "Recording voice... Click mic again to stop." : "Ask NexAI..."}
                 className="bg-transparent border-none text-white outline-none flex-1 text-[16px] placeholder-slate-500 py-1"
                 disabled={isLoading}
               />
@@ -537,7 +591,7 @@ export default function ChatInterface() {
                 {/* Send Button */}
                 <button
                   type="submit"
-                  disabled={!input.trim() || isLoading}
+                  disabled={(!input.trim() && !base64Image && !base64Audio) || isLoading}
                   className="flex-shrink-0 w-10 h-10 rounded-full bg-slate-100 disabled:bg-zinc-850 text-slate-900 disabled:text-zinc-600 flex items-center justify-center hover:bg-white active:scale-95 transition-all duration-150"
                 >
                   <SendHorizontal className="w-4.5 h-4.5" />
