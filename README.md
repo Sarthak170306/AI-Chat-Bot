@@ -46,7 +46,6 @@ NexAI is an enterprise-grade, high-fidelity multimodal SaaS chatbot application 
 
 ## 📐 System Architecture Data Flow
 
-```mermaid
 graph TD
     A[React Client UI Node] -->|1. Request Authentication Token| B[Clerk Auth Provider]
     B -->|2. Return JWT Bearer Token| A
@@ -104,8 +103,8 @@ Day 10: Code Optimization, Purge & Ledger Verification
 Create a `frontend/.env.local` file:
 ```env
 # Clerk Authentication Configuration
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_dXAtZ29hdC00OS5jbGVyay5hY2NvdW50cy5kZXYk
-CLERK_SECRET_KEY=sk_test_blL2mspRc8F0HuJ5YXFoWRJZkujhdOhVbNIGccrSv3
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_yourpublishablekey
+CLERK_SECRET_KEY=sk_test_yoursecretkey
 
 # Target Backend Server Route
 NEXT_PUBLIC_BACKEND_URL=http://localhost:5000
@@ -121,7 +120,7 @@ PORT=5000
 MONGO_URI=mongodb+srv://<username>:<password>@cluster0.mongodb.net/nexai?retryWrites=true&w=majority
 
 # Clerk Secret Key for SDK verification
-CLERK_SECRET_KEY=sk_test_blL2mspRc8F0HuJ5YXFoWRJZkujhdOhVbNIGccrSv3
+CLERK_SECRET_KEY=sk_test_yoursecretkey
 
 # Google Generative AI API Key
 AI_API_KEY=AIzaSy...
