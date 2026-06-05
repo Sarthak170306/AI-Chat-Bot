@@ -12,7 +12,6 @@ const Message = require('../models/Message');
  * @access  Private (Clerk Authenticated)
  */
 router.post('/', authMiddleware, async (req, res) => {
-  console.log("Incoming Request Auth State:", req.auth);
   if (!req.auth || !req.auth.userId) {
     return res.status(401).json({ success: false, error: "Clerk verification failed on Backend. userId is missing." });
   }
@@ -79,7 +78,6 @@ router.post('/session', authMiddleware, chatController.createNewSession);
 
 // Retrieve all sessions for the authenticated user
 router.get('/sessions', authMiddleware, (req, res) => {
-  console.log("Incoming Request Auth State:", req.auth);
   if (!req.auth || !req.auth.userId) {
     return res.status(401).json({ success: false, error: "Clerk verification failed on Backend. userId is missing." });
   }

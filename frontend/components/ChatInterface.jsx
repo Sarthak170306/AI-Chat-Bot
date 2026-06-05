@@ -129,8 +129,6 @@ export default function ChatInterface() {
     }
   }, [isLoaded, userId]);
 
-  // Pre-configured suggestions for the welcome screen state
-
   // Real voice audio recording handler using MediaRecorder
   const handleVoiceClick = async () => {
     if (!isListening) {
