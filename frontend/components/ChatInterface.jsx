@@ -329,7 +329,7 @@ export default function ChatInterface() {
               className="flex items-center space-x-3 w-full px-3 py-2.5 rounded-full text-left text-[14px] text-slate-400 hover:bg-[#1a1b23] hover:text-slate-200 transition duration-150 group"
             >
               <MessageSquare className="w-4 h-4 shrink-0 text-slate-500 group-hover:text-slate-400" />
-              <span className="truncate flex-1 font-medium">{session.title || 'Untitled'}</span>
+              <span className="truncate flex-1 font-medium">{session.title || 'New Chat'}</span>
             </button>
           ))}
         </div>

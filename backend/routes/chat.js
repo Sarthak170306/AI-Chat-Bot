@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/auth');
-const { generateAIResponse } = require('../services/aiService');
+const { generateAIResponse, generateChatTitle } = require('../services/aiService');
 const chatController = require('../controllers/chatController');
 const ChatSession = require('../models/ChatSession');
 const Message = require('../models/Message');
@@ -35,11 +35,13 @@ router.post('/', authMiddleware, async (req, res) => {
     };
 
     let currentSessionId = sessionId;
+    let isFirstMessage = false;
 
     // If no sessionId supplied, create a new session for this user
     if (!currentSessionId) {
       const newSession = await ChatSession.create({ userId: String(userId) });
       currentSessionId = newSession._id;
+      isFirstMessage = true;
     } else {
       // Verify that the session belongs to the user
       const session = await ChatSession.findById(currentSessionId);
@@ -48,6 +50,10 @@ router.post('/', authMiddleware, async (req, res) => {
       }
       if (session.userId !== userId) {
         return res.status(403).json({ success: false, error: 'Forbidden: session does not belong to user.' });
+      }
+      // If the session exists but still has its default title, treat it as the first message
+      if (!session.title || session.title === 'New Chat') {
+        isFirstMessage = true;
       }
     }
 
@@ -59,6 +65,19 @@ router.post('/', authMiddleware, async (req, res) => {
 
     // Persist assistant response
     await saveMessage(currentSessionId, 'assistant', aiResponse);
+
+    // Auto-rename chat session based on first message
+    if (isFirstMessage) {
+      try {
+        const titleInput = promptMessage.trim() || (image ? "Image Analysis" : (audio ? "Audio Message" : "New Chat"));
+        if (titleInput !== "New Chat") {
+          const generatedTitle = await generateChatTitle(titleInput);
+          await ChatSession.findByIdAndUpdate(currentSessionId, { title: generatedTitle });
+        }
+      } catch (titleErr) {
+        console.error('Failed to auto-name chat session:', titleErr);
+      }
+    }
 
     // Return response with session identifier
     return res.status(200).json({ success: true, response: aiResponse, sessionId: currentSessionId });

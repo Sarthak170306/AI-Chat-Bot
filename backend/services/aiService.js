@@ -99,7 +99,45 @@ async function generateAIResponse(userMessage, image, audio) {
   }
 }
 
+/**
+ * Generates a short 3-4 word title for a chat session based on the first user message.
+ * 
+ * @param {string} userMessage - The first message text prompt.
+ * @returns {Promise<string>} The generated title text.
+ */
+async function generateChatTitle(userMessage) {
+  const apiKey = process.env.AI_API_KEY;
+  if (!apiKey) {
+    throw new Error('AI API Key is missing. Please define AI_API_KEY in your .env file.');
+  }
+
+  if (!model) {
+    try {
+      const genAI = new GoogleGenAI(apiKey);
+      model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    } catch (initErr) {
+      throw new Error(`Failed to initialize Gemini Model for title: ${initErr.message}`);
+    }
+  }
+
+  try {
+    const titlePrompt = `Generate a short, 3-4 word title for this chat based on the following user message: "${userMessage}". Return only the title text.`;
+    const result = await model.generateContent(titlePrompt);
+    const response = await result.response;
+    let text = response.text();
+    if (text) {
+      text = text.trim().replace(/^["']|["']$/g, '');
+    }
+    return text || 'New Chat';
+  } catch (error) {
+    console.error('Error generating chat title:', error);
+    return 'New Chat';
+  }
+}
+
 module.exports = {
   GoogleGenAI, // Exporting the class alias as requested
-  generateAIResponse
+  generateAIResponse,
+  generateChatTitle
 };
+
